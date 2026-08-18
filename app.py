@@ -1,12 +1,14 @@
-from urllib import response
+from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
+
 from config.settings import ENV_PATH
 from services.rag_service import RagService
 
 
 load_dotenv(ENV_PATH)
+
 
 st.set_page_config(
     page_title="ChipChat: ASIC Assistant",
@@ -14,9 +16,12 @@ st.set_page_config(
     layout="centered",
 )
 
+
 st.title("ChipChat: ASIC RAG Assistant")
+
 st.markdown(
-    "Ask questions about your hardware specifications and protocols."
+    "Ask questions about your hardware specifications, "
+    "protocols, PDFs, and approved web documentation."
 )
 
 
@@ -33,11 +38,150 @@ def initialize_chat_history() -> None:
                 "role": "assistant",
                 "content": (
                     "Hello! I am your ASIC assistant. "
-                    "I have loaded the documents in the documents "
-                    "directory. What would you like to know?"
+                    "I have loaded your local documents and "
+                    "approved web documentation. "
+                    "What would you like to know?"
                 ),
+                "sources": [],
             }
         ]
+
+
+def get_pdf_page(metadata: dict) -> str:
+    """
+    Return a readable PDF page number.
+
+    PyPDFLoader normally stores:
+        page = 0, 1, 2, ...
+
+    so +1 is used for human-readable page numbering.
+    """
+
+    page_label = metadata.get("page_label")
+
+    if page_label is not None:
+        return str(page_label)
+
+    page = metadata.get("page")
+
+    if isinstance(page, int):
+        return str(page + 1)
+
+    if page is not None:
+        return str(page)
+
+    return "Unknown"
+
+
+def format_sources(context) -> list[str]:
+    """
+    Convert retrieved LangChain documents into
+    readable source labels.
+
+    Supports:
+    - PDFs
+    - Web URLs
+    """
+
+    sources = []
+    seen = set()
+
+    for document in context:
+        metadata = document.metadata or {}
+
+        source = metadata.get("source", "")
+        document_type = metadata.get(
+            "document_type",
+            "",
+        ).lower()
+
+        url = metadata.get("url")
+
+        # Detect URL even if document_type is missing
+        if not url and isinstance(source, str):
+            if source.startswith(
+                ("http://", "https://")
+            ):
+                url = source
+
+        # -----------------------------
+        # Web source
+        # -----------------------------
+        if document_type == "web" or url:
+            if not url:
+                continue
+
+            source_key = (
+                "web",
+                url,
+            )
+
+            if source_key in seen:
+                continue
+
+            seen.add(source_key)
+
+            sources.append(
+                f"🌐 [{url}]({url})"
+            )
+
+            continue
+
+        # -----------------------------
+        # PDF source
+        # -----------------------------
+        document_name = metadata.get(
+            "document_name"
+        )
+
+        if not document_name and source:
+            document_name = Path(
+                str(source)
+            ).name
+
+        if not document_name:
+            document_name = "Unknown PDF"
+
+        page = get_pdf_page(metadata)
+
+        section = metadata.get("section")
+
+        source_key = (
+            "pdf",
+            document_name,
+            page,
+            section,
+        )
+
+        if source_key in seen:
+            continue
+
+        seen.add(source_key)
+
+        label = (
+            f"📄 {document_name} "
+            f"— Page {page}"
+        )
+
+        if section:
+            label += f" — {section}"
+
+        sources.append(label)
+
+    return sources
+
+
+def display_sources(
+    sources: list[str],
+) -> None:
+    if not sources:
+        return
+
+    with st.expander("Sources"):
+        for source in sources:
+            st.markdown(
+                f"- {source}"
+            )
 
 
 def display_chat_history() -> None:
@@ -53,12 +197,16 @@ def display_chat_history() -> None:
             message["role"],
             avatar=avatar,
         ):
-            st.markdown(message["content"])
+            st.markdown(
+                message["content"]
+            )
 
-            if message.get("sources"):
-                with st.expander("Sources"):
-                    for source in message["sources"]:
-                        st.markdown(f"- {source}")
+            display_sources(
+                message.get(
+                    "sources",
+                    [],
+                )
+            )
 
 
 def process_user_question(
@@ -67,46 +215,59 @@ def process_user_question(
 ) -> None:
 
     # Save user message
+
     st.session_state.messages.append(
         {
             "role": "user",
             "content": user_question,
+            "sources": [],
         }
     )
 
-    # Display user message
     with st.chat_message(
         "user",
         avatar="assets/user.png",
     ):
         st.markdown(user_question)
 
-    
+    # Run RAG
+
     with st.chat_message(
         "assistant",
         avatar="assets/assistant.png",
     ):
-        with st.spinner("Searching specifications..."):
+
+        with st.spinner(
+            "Searching available sources..."
+        ):
+
             try:
                 response = rag_chain.invoke(
-                    {"input": user_question}
+                    {
+                        "input": user_question
+                    }
                 )
 
-                answer = response["answer"]
-                documents = response["context"]
+                answer = response.get(
+                    "answer",
+                    "No answer was generated.",
+                )
 
-                sources = format_sources(documents)
+                context = response.get(
+                    "context",
+                    [],
+                )
+                    
+                sources = format_sources(
+                    context
+                )
 
-                # Display answer
                 st.markdown(answer)
 
-                # Display sources
-                if sources:
-                    with st.expander("Sources"):
-                        for source in sources:
-                            st.markdown(f"- {source}")
+                display_sources(
+                    sources
+                )
 
-                # Save assistant message
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
@@ -119,90 +280,24 @@ def process_user_question(
                 st.error(
                     f"An error occurred: {error}"
                 )
-# def format_sources(documents) -> list[str]:
-#     sources = []
-
-#     for document in documents:
-#         name = document.metadata.get(
-#             "document_name",
-#             "Unknown document",
-#         )
-
-#         page = document.metadata.get(
-#             "page_number",
-#             "Unknown page",
-#         )
-
-#         citation = f"{name} — Page {page}"
-
-#         if citation not in sources:
-#             sources.append(citation)
-
-#     return sources
-
-def format_sources(documents) -> list[str]:
-    sources = []
-
-    for document in documents:
-
-        document_type = document.metadata.get(
-            "document_type"
-        )
-
-        if document_type == "pdf":
-
-            name = document.metadata.get(
-                "document_name",
-                "Unknown PDF",
-            )
-
-            page = document.metadata.get(
-                "page_number",
-                "Unknown page",
-            )
-
-            citation = (
-                f"📄 {name} — Page {page}"
-            )
-
-        elif document_type == "website":
-
-            title = document.metadata.get(
-                "title",
-                "Website",
-            )
-
-            url = document.metadata.get(
-                "url",
-                document.metadata.get(
-                    "source",
-                    "",
-                ),
-            )
-
-            citation = (
-                f"🌐 {title} — {url}"
-            )
-
-        else:
-            continue
-
-        if citation not in sources:
-            sources.append(citation)
-
-    return sources
 
 
 def main() -> None:
+
     initialize_chat_history()
 
-    with st.spinner("Initializing document database..."):
-        rag_chain = initialize_rag_pipeline()
+    with st.spinner(
+        "Initializing knowledge base..."
+    ):
+        rag_chain = (
+            initialize_rag_pipeline()
+        )
 
     display_chat_history()
 
     user_question = st.chat_input(
-        "ask away! I have your documents loaded."
+        "Ask about your documents "
+        "or indexed web sources."
     )
 
     if user_question:

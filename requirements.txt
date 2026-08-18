@@ -7,4 +7,5 @@ langchain-openai
 langchain-chroma
 langchain-text-splitters
 chromadb
-beautifulsoup4streamlit run app.py
+beautifulsoup4
+requests
