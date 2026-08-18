@@ -15,3 +15,12 @@ RETRIEVAL_COUNT = 4
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 CHAT_MODEL = "gpt-4o-mini"
+
+WEB_SOURCES = [
+    "https://verilator.org/guide/latest/",
+    "https://verilator.org/guide/latest/exe_verilator.html",
+    "https://verilator.org/guide/latest/verilating.html",
+    "https://verilator.org/guide/latest/warnings.html",
+    "https://yosyshq.readthedocs.io/projects/yosys/en/latest/",
+    "https://chipverify.com/"
+]
