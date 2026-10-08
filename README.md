@@ -1,3 +1,9 @@
+NOTE: THIS PROJECT HAS BEEN TEMPORARY HALTED
+This is because I don't have a full grasp over OpenLane/LibreLane yet.
+
+Please look at this RAG project instead which is aimed at teaching people who are new in digital deign: [RAGster](https://github.com/Alison0704/RAGster)
+
+
 # ChipChat
 The AI assistant using RAG achitechture with LLM configuration to help Hardware DV engineering during development and testing of their design.
 The aim is to help DV engineers to navigate their log and spec files generated from OpenROAD and help with code debugging.
